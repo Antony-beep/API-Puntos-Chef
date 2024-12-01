@@ -2,57 +2,71 @@ import { addKeyword, createBot, createFlow, createProvider, MemoryDB } from "@bo
 import { BaileysProvider, handleCtx } from "@bot-whatsapp/provider-baileys";
 import { KEYS } from "../data/constantes";
 
-const API_KEY= KEYS.API_KEY;
+const API_KEY = KEYS.API_KEY;
 const PORT = Number(KEYS.PORT) || 3002;
+const QR_PASSWORD = KEYS.QR_PASSWORD ; // Contraseña para acceder a /qr
 
-console.log(`Servidor corriendo en el puerto: ${PORT}`);
 const flowBienvenida = addKeyword("hola").addAnswer("Prueba de wp api");
+
+console.log("PASSWORD DE QR ES :"+QR_PASSWORD)
 
 const main = async () => {
     try {
         const provider = createProvider(BaileysProvider);
-
-        // Inicializa el servidor HTTP en el puerto 3002
         provider.initHttpServer(PORT);
 
+        // Middleware para verificar la contraseña
+        provider.http?.server.use((req, res, next) => {
+            if (req.url.startsWith("/qr")) {
+                // Verifica la contraseña en el encabezado o en los parámetros de consulta
+                const password = req.headers["x-password"] || req.query.pass;
+                if (password !== QR_PASSWORD) {
+                    res.statusCode = 401; // No autorizado
+                    res.end("Acceso denegado: Contraseña incorrecta");
+                    return; // Finaliza la ejecución del middleware
+                }
+            }
+            next(); // Continua al siguiente middleware o manejador de rutas
+        });
+
+        // Ruta protegida
+        
+
+        // Configuración de otras rutas
         provider.http?.server.post(
             "/send-message",
             handleCtx(async (bot, req, res) => {
                 try {
-                    // Verifica la API Key en los encabezados de la solicitud
                     const clientApiKey = req.headers["x-api-key"];
                     if (clientApiKey !== API_KEY) {
-                        res.statusCode = 401; // Respuesta no autorizada
+                        res.statusCode = 401;
                         return res.end("Acceso denegado: API Key inválida");
                     }
 
-                    // Extrae los parámetros del cuerpo de la solicitud
                     const { telefono, mensaje } = req.body;
                     if (!telefono || !mensaje) {
-                        res.statusCode = 400; // Solicitud incorrecta
+                        res.statusCode = 400;
                         return res.end("Faltan parámetros: 'telefono' y 'mensaje' son requeridos");
                     }
 
-                    // Lógica para enviar un mensaje
                     await bot.sendMessage(telefono, mensaje, {});
                     res.end("Mensaje enviado desde el servidor de Polka");
                 } catch (error) {
                     console.error("Error al enviar el mensaje:", error);
-                    res.statusCode = 500; // Error interno del servidor
+                    res.statusCode = 500;
                     res.end("Error al enviar el mensaje");
                 }
             })
         );
 
-        // Configuración del bot
         await createBot({
-            flow: createFlow([]), // Define los flujos (se pueden agregar más)
-            database: new MemoryDB(), // Base de datos en memoria
+            flow: createFlow([]),
+            database: new MemoryDB(),
             provider,
         });
     } catch (error) {
         console.error("Error al iniciar el bot:", error);
-        process.exit(1); // Salir con código de error
+        process.exit(1);
     }
 };
 
